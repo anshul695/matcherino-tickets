@@ -403,126 +403,269 @@ async def on_message(message):
             except discord.Forbidden:
                 pass  # User has DMs disabled
 
-# Commands
-@bot.tree.command(name="balance", description="Check your VRT token and points balance")
-async def balance(interaction: discord.Interaction):
-    user_data = await db.get_user(interaction.user.id)
-    if not user_data:
-        user_data = await db.create_user(interaction.user.id)
-    
-    embed = discord.Embed(
-        title=f"{interaction.user.display_name}'s Balance",
-        color=discord.Color.blurple()
-    )
-    embed.add_field(name="VRT Tokens", value=f"{user_data.get('tokens', 0):,}", inline=True)
-    embed.add_field(name="Points", value=f"{user_data.get('points', 0):,}", inline=True)
-    embed.add_field(name="Total Words", value=f"{user_data.get('total_words', 0):,}", inline=False)
-    embed.set_thumbnail(url=interaction.user.display_avatar.url)
-    
-    await interaction.response.send_message(embed=embed)
+class Economy(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
 
-@bot.tree.command(name="shop", description="Browse the VRT shop items and passes")
-async def shop(interaction: discord.Interaction):
-    view = ShopView()
-    embed = view.create_items_embed(interaction)
-    await interaction.response.send_message(embed=embed, view=view)
-
-@bot.tree.command(name="buy", description="Purchase an item from the VRT shop")
-@app_commands.describe(item="The item you want to purchase")
-async def buy(interaction: discord.Interaction, item: str):
-    if item not in SHOP_ITEMS:
-        await interaction.response.send_message("❌ That item doesn't exist in the shop!", ephemeral=True)
-        return
-    
-    user_data = await db.get_user(interaction.user.id)
-    if not user_data:
-        user_data = await db.create_user(interaction.user.id)
-    
-    item_data = SHOP_ITEMS[item]
-    
-    if user_data.get("tokens", 0) < item_data["price"]:
-        await interaction.response.send_message(
-            f"❌ You don't have enough VRT tokens for this purchase!\n"
-            f"You need {item_data['price']:,} VRT but only have {user_data.get('tokens', 0):,} VRT.",
-            ephemeral=True
+    @commands.command(name="balance", description="Check your VRT token and points balance")
+    async def balance(self, ctx):
+        user_data = await db.get_user(ctx.author.id)
+        if not user_data:
+            user_data = await db.create_user(ctx.author.id)
+        
+        embed = discord.Embed(
+            title=f"{ctx.author.display_name}'s Balance",
+            color=discord.Color.blurple()
         )
-        return
-    
-    # Process purchase
-    new_balance = user_data["tokens"] - item_data["price"]
-    await db.update_user(interaction.user.id, {"tokens": new_balance})
-    await db.record_transaction(interaction.user.id, -item_data["price"], f"Purchased {item}")
-    await db.record_purchase(interaction.user.id, item, item_data["price"])
+        embed.add_field(name="VRT Tokens", value=f"{user_data.get('tokens', 0):,}", inline=True)
+        embed.add_field(name="Points", value=f"{user_data.get('points', 0):,}", inline=True)
+        embed.add_field(name="Total Words", value=f"{user_data.get('total_words', 0):,}", inline=False)
+        embed.set_thumbnail(url=ctx.author.display_avatar.url)
+        
+        await ctx.send(embed=embed)
 
-    # Send confirmation DM
-    embed = discord.Embed(
-        title="✅ Purchase Successful!",
-        description=f"Thank you for purchasing **{item}**!",
-        color=discord.Color.green()
-    )
-    embed.add_field(name="Item Price", value=f"{item_data['price']:,} VRT", inline=True)
-    embed.add_field(name="New Balance", value=f"{new_balance:,} VRT", inline=True)
-    embed.add_field(
-        name="Next Steps", 
-        value="Please open a ticket in our server to claim your prize.", 
-        inline=False
-    )
-    
-    try:
-        await interaction.user.send(embed=embed)
-    except discord.Forbidden:
-        await interaction.response.send_message(
-            "I couldn't send you a DM! Please enable DMs from server members to receive purchase details.",
-            ephemeral=True
-        )
-    else:
-        await interaction.response.send_message(
-            "Purchase successful! Check your DMs for details.",
-            ephemeral=True
-        )
+    @commands.command(name="shop", description="Browse the VRT shop items and passes")
+    async def shop(self, ctx):
+        view = ShopView()
+        embed = view.create_items_embed(ctx)
+        await ctx.send(embed=embed, view=view)
 
-    # Log purchase
-    log_channel_id = os.getenv("LOG_CHANNEL_ID")
-    if log_channel_id:
-        log_channel = bot.get_channel(int(log_channel_id))
-        if log_channel:
-            log_embed = discord.Embed(
-                title="🛒 New Purchase",
-                description=f"**User:** {interaction.user.mention} (`{interaction.user.id}`)\n"
-                            f"**Item:** {item}\n"
-                            f"**Price:** {item_data['price']:,} VRT",
-                color=discord.Color.orange()
+    @commands.command(name="buy", description="Purchase an item from the VRT shop")
+    async def buy(self, ctx, *, item: str):
+        if item not in SHOP_ITEMS:
+            await ctx.send("❌ That item doesn't exist in the shop!")
+            return
+        
+        user_data = await db.get_user(ctx.author.id)
+        if not user_data:
+            user_data = await db.create_user(ctx.author.id)
+        
+        item_data = SHOP_ITEMS[item]
+        
+        if user_data.get("tokens", 0) < item_data["price"]:
+            await ctx.send(
+                f"❌ You don't have enough VRT tokens for this purchase!\n"
+                f"You need {item_data['price']:,} VRT but only have {user_data.get('tokens', 0):,} VRT."
             )
-            log_embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            await log_channel.send(content="<@&MOD_ROLE_ID>", embed=log_embed)
+            return
+        
+        # Process purchase
+        new_balance = user_data["tokens"] - item_data["price"]
+        await db.update_user(ctx.author.id, {"tokens": new_balance})
+        await db.record_transaction(ctx.author.id, -item_data["price"], f"Purchased {item}")
+        await db.record_purchase(ctx.author.id, item, item_data["price"])
 
-@bot.tree.command(name="transactions", description="View your recent VRT token transactions")
-@app_commands.describe(limit="Number of transactions to show (max 10)")
-async def transactions(interaction: discord.Interaction, limit: int = 5):
-    limit = min(max(limit, 1), 10)  # Clamp between 1 and 10
-    data = db._read_data(db.transactions_file)
-    user_transactions = data.get(str(interaction.user.id), [])[-limit:][::-1]  # Get latest transactions
-    
-    if not user_transactions:
-        await interaction.response.send_message("You don't have any transactions yet.", ephemeral=True)
-        return
-    
-    embed = discord.Embed(
-        title=f"Your Recent Transactions (Last {len(user_transactions)})",
-        color=discord.Color.blurple()
-    )
-    
-    for tx in user_transactions:
-        amount = tx["amount"]
+        # Send confirmation
+        embed = discord.Embed(
+            title="✅ Purchase Successful!",
+            description=f"Thank you for purchasing **{item}**!",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Item Price", value=f"{item_data['price']:,} VRT", inline=True)
+        embed.add_field(name="New Balance", value=f"{new_balance:,} VRT", inline=True)
         embed.add_field(
-            name=f"{'+' if amount > 0 else ''}{amount:,} VRT - {tx['reason']}",
-            value=f"<t:{int(datetime.fromisoformat(tx['timestamp']).timestamp())}:R>\n"
-                  f"Balance: {tx['balance']:,} VRT",
+            name="Next Steps", 
+            value="Please open a ticket in our server to claim your prize.", 
             inline=False
         )
-    
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        await ctx.send(embed=embed)
 
+        # Log purchase
+        log_channel_id = os.getenv("LOG_CHANNEL_ID")
+        if log_channel_id:
+            log_channel = self.bot.get_channel(int(log_channel_id))
+            if log_channel:
+                log_embed = discord.Embed(
+                    title="🛒 New Purchase",
+                    description=f"**User:** {ctx.author.mention} (`{ctx.author.id}`)\n"
+                                f"**Item:** {item}\n"
+                                f"**Price:** {item_data['price']:,} VRT",
+                    color=discord.Color.orange()
+                )
+                log_embed.set_thumbnail(url=ctx.author.display_avatar.url)
+                await log_channel.send(content="<@&MOD_ROLE_ID>", embed=log_embed)
+
+    @commands.command(name="transactions", description="View your recent VRT token transactions")
+    async def transactions(self, ctx, limit: int = 5):
+        limit = min(max(limit, 1), 10)  # Clamp between 1 and 10
+        data = db._read_data(db.transactions_file)
+        user_transactions = data.get(str(ctx.author.id), [])[-limit:][::-1]  # Get latest transactions
+        
+        if not user_transactions:
+            await ctx.send("You don't have any transactions yet.")
+            return
+        
+        embed = discord.Embed(
+            title=f"Your Recent Transactions (Last {len(user_transactions)})",
+            color=discord.Color.blurple()
+        )
+        
+        for tx in user_transactions:
+            amount = tx["amount"]
+            embed.add_field(
+                name=f"{'+' if amount > 0 else ''}{amount:,} VRT - {tx['reason']}",
+                value=f"<t:{int(datetime.fromisoformat(tx['timestamp']).timestamp())}:R>\n"
+                      f"Balance: {tx['balance']:,} VRT",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+
+    @commands.command(name="give", description="Give tokens to another user")
+    @commands.has_permissions(administrator=True)
+    async def give(self, ctx, member: discord.Member, amount: int):
+        if amount <= 0:
+            await ctx.send("Amount must be positive!")
+            return
+            
+        sender_data = await db.get_user(ctx.author.id)
+        if not sender_data:
+            sender_data = await db.create_user(ctx.author.id)
+            
+        receiver_data = await db.get_user(member.id)
+        if not receiver_data:
+            receiver_data = await db.create_user(member.id)
+            
+        # Update receiver's balance
+        new_balance = receiver_data.get("tokens", 0) + amount
+        await db.update_user(member.id, {"tokens": new_balance})
+        await db.record_transaction(member.id, amount, f"Received from {ctx.author.display_name}")
+        
+        embed = discord.Embed(
+            title="✅ Tokens Sent",
+            description=f"Successfully sent {amount:,} VRT to {member.mention}",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Their New Balance", value=f"{new_balance:,} VRT")
+        await ctx.send(embed=embed)
+
+    @commands.command(name="remove", description="Remove tokens from a user")
+    @commands.has_permissions(administrator=True)
+    async def remove(self, ctx, member: discord.Member, amount: int):
+        if amount <= 0:
+            await ctx.send("Amount must be positive!")
+            return
+            
+        user_data = await db.get_user(member.id)
+        if not user_data:
+            user_data = await db.create_user(member.id)
+            
+        if user_data.get("tokens", 0) < amount:
+            await ctx.send(f"{member.display_name} doesn't have enough tokens!")
+            return
+            
+        new_balance = user_data["tokens"] - amount
+        await db.update_user(member.id, {"tokens": new_balance})
+        await db.record_transaction(member.id, -amount, f"Removed by {ctx.author.display_name}")
+        
+        embed = discord.Embed(
+            title="✅ Tokens Removed",
+            description=f"Successfully removed {amount:,} VRT from {member.mention}",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Their New Balance", value=f"{new_balance:,} VRT")
+        await ctx.send(embed=embed)
+
+    @commands.command(name="givepoints", description="Give points to another user")
+    @commands.has_permissions(administrator=True)
+    async def givepoints(self, ctx, member: discord.Member, amount: int):
+        if amount <= 0:
+            await ctx.send("Amount must be positive!")
+            return
+            
+        receiver_data = await db.get_user(member.id)
+        if not receiver_data:
+            receiver_data = await db.create_user(member.id)
+            
+        # Update receiver's points
+        new_points = receiver_data.get("points", 0) + amount
+        await db.update_user(member.id, {"points": new_points})
+        
+        embed = discord.Embed(
+            title="✅ Points Given",
+            description=f"Successfully gave {amount:,} points to {member.mention}",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Their New Points", value=f"{new_points:,} points")
+        await ctx.send(embed=embed)
+
+    @commands.command(name="removepoints", description="Remove points from a user")
+    @commands.has_permissions(administrator=True)
+    async def removepoints(self, ctx, member: discord.Member, amount: int):
+        if amount <= 0:
+            await ctx.send("Amount must be positive!")
+            return
+            
+        user_data = await db.get_user(member.id)
+        if not user_data:
+            user_data = await db.create_user(member.id)
+            
+        if user_data.get("points", 0) < amount:
+            await ctx.send(f"{member.display_name} doesn't have enough points!")
+            return
+            
+        new_points = user_data["points"] - amount
+        await db.update_user(member.id, {"points": new_points})
+        
+        embed = discord.Embed(
+            title="✅ Points Removed",
+            description=f"Successfully removed {amount:,} points from {member.mention}",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Their New Points", value=f"{new_points:,} points")
+        await ctx.send(embed=embed)
+
+    @commands.command(name="pointslb", description="Show points leaderboard")
+    async def pointslb(self, ctx, limit: int = 10):
+        limit = min(max(limit, 1), 25)  # Clamp between 1 and 25
+        all_users = await db.get_all_users()
+        
+        # Sort by points descending
+        sorted_users = sorted(all_users.items(), key=lambda x: x[1].get("points", 0), reverse=True)
+        
+        embed = discord.Embed(
+            title="🏆 Points Leaderboard",
+            color=discord.Color.gold()
+        )
+        
+        for i, (user_id, data) in enumerate(sorted_users[:limit], 1):
+            user = self.bot.get_user(int(user_id))
+            username = user.display_name if user else f"Unknown User ({user_id})"
+            embed.add_field(
+                name=f"{i}. {username}",
+                value=f"{data.get('points', 0):,} points",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+
+    @commands.command(name="tokenslb", description="Show tokens leaderboard")
+    async def tokenslb(self, ctx, limit: int = 10):
+        limit = min(max(limit, 1), 25)  # Clamp between 1 and 25
+        all_users = await db.get_all_users()
+        
+        # Sort by tokens descending
+        sorted_users = sorted(all_users.items(), key=lambda x: x[1].get("tokens", 0), reverse=True)
+        
+        embed = discord.Embed(
+            title="🏆 Tokens Leaderboard",
+            color=discord.Color.gold()
+        )
+        
+        for i, (user_id, data) in enumerate(sorted_users[:limit], 1):
+            user = self.bot.get_user(int(user_id))
+            username = user.display_name if user else f"Unknown User ({user_id})"
+            embed.add_field(
+                name=f"{i}. {username}",
+                value=f"{data.get('tokens', 0):,} VRT",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+
+async def setup(bot):
+    await bot.add_cog(Economy(bot))
 # Run the bot
 if __name__ == "__main__":
     bot.run(os.getenv("DISCORD_TOKEN"))
