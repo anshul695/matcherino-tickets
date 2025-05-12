@@ -97,11 +97,11 @@ class JSONDatabase:
 
     async def get_points(self, user_id: int) -> int:
         data = self._read_data(self.points_file)
-        return data.get[str(user_id), 0]
+        return data.get(str(user_id), 0)
 
     async def add_points(self, user_id: int, points: int):
         data = self._read_data(self.points_file)
-        current = data.get(str(user_id), 0
+        current = data.get(str(user_id), 0)
         data[str(user_id)] = current + points
         self._write_data(self.points_file, data)
 
