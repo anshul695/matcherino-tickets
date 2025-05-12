@@ -4,12 +4,23 @@ import random
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
+from flask import Flask, request
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 from dotenv import load_dotenv
+
+# Initialize Flask app
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def home():
+    return "Discord Bot is running!", 200
+
+def run_web():
+    web_app.run(host='0.0.0.0', port=8080)
 
 # Load environment variables
 load_dotenv()
@@ -25,6 +36,11 @@ intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix='%', intents=intents)
+
+# Helper function to add footer to embeds
+def add_footer(embed: discord.Embed) -> discord.Embed:
+    embed.set_footer(text="Made with ❤️ by Anshhhulll")
+    return embed
 
 # Data storage
 class JSONDatabase:
@@ -85,7 +101,7 @@ class JSONDatabase:
 
     async def add_points(self, user_id: int, points: int):
         data = self._read_data(self.points_file)
-        current = data.get(str(user_id), 0)
+        current = data.get(str(user_id), 0
         data[str(user_id)] = current + points
         self._write_data(self.points_file, data)
 
@@ -119,6 +135,9 @@ class JSONDatabase:
         }
         data[str(user_id)].append(purchase)
         self._write_data(self.purchases_file, data)
+
+    async def get_all_users(self) -> Dict:
+        return self._read_data(self.users_file)
 
 # Initialize database
 db = JSONDatabase()
@@ -271,7 +290,7 @@ class ShopView(discord.ui.View):
             
             embed.set_footer(text=f"Page {self.current_page + 1}/{(len(items) + self.items_per_page - 1) // self.items_per_page} | Category: {self.current_category}")
         
-        return embed
+        return add_footer(embed)
     
     def create_passes_embed(self) -> discord.Embed:
         embed = discord.Embed(
@@ -294,7 +313,7 @@ class ShopView(discord.ui.View):
             )
         
         embed.set_footer(text="Passes cannot be purchased with VRT tokens - contact staff for purchase")
-        return embed
+        return add_footer(embed)
     
     @discord.ui.select(
         placeholder="Select a category...",
@@ -399,7 +418,7 @@ async def on_message(message):
                     color=discord.Color.green()
                 )
                 embed.add_field(name="New Balance", value=f"{user_data.get('tokens', 0) + tokens_to_add} VRT")
-                await message.author.send(embed=embed)
+                await message.author.send(embed=add_footer(embed))
             except discord.Forbidden:
                 pass  # User has DMs disabled
 
@@ -422,7 +441,7 @@ class Economy(commands.Cog):
         embed.add_field(name="Total Words", value=f"{user_data.get('total_words', 0):,}", inline=False)
         embed.set_thumbnail(url=ctx.author.display_avatar.url)
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=add_footer(embed))
 
     @commands.command(name="shop", description="Browse the VRT shop items and passes")
     async def shop(self, ctx):
@@ -469,7 +488,7 @@ class Economy(commands.Cog):
             inline=False
         )
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=add_footer(embed))
 
         # Log purchase
         log_channel_id = os.getenv("LOG_CHANNEL_ID")
@@ -484,7 +503,7 @@ class Economy(commands.Cog):
                     color=discord.Color.orange()
                 )
                 log_embed.set_thumbnail(url=ctx.author.display_avatar.url)
-                await log_channel.send(content="<@&MOD_ROLE_ID>", embed=log_embed)
+                await log_channel.send(content="<@&MOD_ROLE_ID>", embed=add_footer(log_embed))
 
     @commands.command(name="transactions", description="View your recent VRT token transactions")
     async def transactions(self, ctx, limit: int = 5):
@@ -510,7 +529,7 @@ class Economy(commands.Cog):
                 inline=False
             )
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=add_footer(embed))
 
     @commands.command(name="give", description="Give tokens to another user")
     @commands.has_permissions(administrator=True)
@@ -538,7 +557,7 @@ class Economy(commands.Cog):
             color=discord.Color.green()
         )
         embed.add_field(name="Their New Balance", value=f"{new_balance:,} VRT")
-        await ctx.send(embed=embed)
+        await ctx.send(embed=add_footer(embed))
 
     @commands.command(name="remove", description="Remove tokens from a user")
     @commands.has_permissions(administrator=True)
@@ -565,7 +584,7 @@ class Economy(commands.Cog):
             color=discord.Color.green()
         )
         embed.add_field(name="Their New Balance", value=f"{new_balance:,} VRT")
-        await ctx.send(embed=embed)
+        await ctx.send(embed=add_footer(embed))
 
     @commands.command(name="givepoints", description="Give points to another user")
     @commands.has_permissions(administrator=True)
@@ -588,7 +607,7 @@ class Economy(commands.Cog):
             color=discord.Color.green()
         )
         embed.add_field(name="Their New Points", value=f"{new_points:,} points")
-        await ctx.send(embed=embed)
+        await ctx.send(embed=add_footer(embed))
 
     @commands.command(name="removepoints", description="Remove points from a user")
     @commands.has_permissions(administrator=True)
@@ -614,7 +633,7 @@ class Economy(commands.Cog):
             color=discord.Color.green()
         )
         embed.add_field(name="Their New Points", value=f"{new_points:,} points")
-        await ctx.send(embed=embed)
+        await ctx.send(embed=add_footer(embed))
 
     @commands.command(name="pointslb", description="Show points leaderboard")
     async def pointslb(self, ctx, limit: int = 10):
@@ -638,7 +657,7 @@ class Economy(commands.Cog):
                 inline=False
             )
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=add_footer(embed))
 
     @commands.command(name="tokenslb", description="Show tokens leaderboard")
     async def tokenslb(self, ctx, limit: int = 10):
@@ -662,10 +681,15 @@ class Economy(commands.Cog):
                 inline=False
             )
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=add_footer(embed))
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))
-# Run the bot
+
+# Run the bot and web server
 if __name__ == "__main__":
+    import threading
+    # Start Flask server in a separate thread
+    threading.Thread(target=run_web, daemon=True).start()
+    # Start Discord bot
     bot.run(os.getenv("DISCORD_TOKEN"))
